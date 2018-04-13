@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="zwlr_screencontent">
+
+  <copyright>
+    Copyright © 2018 Rostislav Pehlivanov
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice (including the next
+    paragraph) shall be included in all copies or substantial portions of the
+    Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+  </copyright>
+
+  <description summary="a frame ready for readout">
+    An interface to capture surfaces in an efficient way.
+    Overall usage:
+
+    1.) client registers with zwlr_screencontent_manager
+    2.) server sends client info about surfaces via "receive_surface_info"
+    3.) client subscribes to capture a surface via the "capture" request
+    4.) server sends client events via the "zwlr_screencontent_frame" interface
+    5.) client finishes and informs server via the "destroy" event
+  </description>
+
+  <interface name="zwlr_screencontent_frame" version="1">
+    <description summary="a frame ready for readout">
+      This object represents a frame which is ready to have its resources
+      fetched and used.
+
+      The receive callback shall be called first, followed by either the
+      "receive_object" callback once per object or the "receive_layer" callback,
+      once per layer. The "receive_plane" callback shall only be called after
+      the "receive_layer" callback corresponding to the layer the plane belongs
+      to has been called. Finally, the "ready" event is called to indicate that
+      all the data has been made available for readout, as well as the time
+      at which presentation happened at.
+      The ownership of the frame is passed to the client, who's responsible for
+      destroying it once ready.
+      The data the API describes has been based off of what
+      VASurfaceAttribExternalBuffers contains.
+      All frames are read-only and may not be written into or altered.
+    </description>
+
+    <enum name="frame_flags">
+      <description summary="frame flags">
+        Special flags that must be respected by the client.
+        Transient frames indicate short lifetime frames (such as swapchain
+        images from external clients). Clients are advised to copy them and do
+        all processing outside of the "ready" event.
+      </description>
+      <entry name="transient" value="1"/>
+    </enum>
+
+    <event name="receive">
+      <description summary="main callback">
+        Main callback supplying the client with information about the frame,
+        as well as an object to serve as context for destruction. Always called
+        first before any other events.
+      </description>
+      <arg name="width" type="uint"
+           summary="frame width, scaling factor included"/>
+      <arg name="height" type="uint"
+           summary="frame height, scaling factor included"/>
+      <arg name="scale" type="uint"
+           summary="current scaling factor of the client"/>
+      <arg name="frame_flags" type="uint" enum="frame_flags"
+           summary="indicates special frame features"/>
+      <arg name="mod_high" type="uint"
+           summary="drm format modifier, high"/>
+      <arg name="mod_low" type="uint"
+           summary="drm format modifier, low"/>
+      <arg name="num_objects" type="uint"
+           summary="indicates how many objects (FDs) the frame has (max 4)"/>
+      <arg name="num_layers" type="uint"
+           summary="indicates how many layers the frame has (max 4)"/>
+    </event>
+    <event name="receive_object">
+      <description summary="object receiving callback">
+        Callback which serves to supply the client with the file descriptors
+        containing the data for each object.
+        The amount of data in each FD can be inferred via lseek().
+        Will be called after the main receive event, once per object.
+      </description>
+      <arg name="index" type="uint"
+           summary="index of the current object"/>
+      <arg name="fd" type="fd"
+           summary="fd of the current object"/>
+    </event>
+    <event name="receive_layer">
+      <description summary="layer receiving callback">
+        Callback which serves to supply the client with information on what's
+        contained in each file descriptor and how its laid out.
+        Will be called after the main receive event, once per layer.
+      </description>
+      <arg name="index" type="uint"
+           summary="index of the current plane"/>
+      <arg name="format" type="uint"
+           summary="format of the layer (DRM_FORMAT_*)"/>
+      <arg name="num_planes" type="uint"
+           summary="number of planes in the current layer (max 4)"/>
+    </event>
+    <event name="receive_plane">
+      <description summary="plane info receiving callback">
+        Callback which supplies the client with plane information for each
+        layer.
+      </description>
+      <arg name="index" type="uint"
+           summary="index of the current plane"/>
+      <arg name="layer_index" type="uint"
+           summary="index of the current layer"/>
+      <arg name="object_index" type="uint"
+           summary="index of the object the plane applies to"/>
+      <arg name="offset" type="uint"
+           summary="starting point for the data in the object's fd"/>
+      <arg name="stride" type="uint"
+           summary="line size in bytes"/>
+    </event>
+    <event name="ready">
+      <description summary="indicates frame is available for reading">
+        Called as soon as the frame is presented, indicating it is available
+        for reading.
+      </description>
+      <arg name="pts_high" type="uint"
+           summary="presentation timestamp, high"/>
+      <arg name="pts_low" type="uint"
+           summary="presentation timestamp, low"/>
+    </event>
+    <event name="abort">
+      <description summary="indicates the frame is no longer valid">
+        If the frame is no longer valid after the "receive" event has been
+        called, this callback will be used to inform the client to scrap the
+        frame. The client can register to receive another frame callback here
+        in case capturing becomes possible again.
+      </description>
+    </event>
+
+    <request name="destroy" type="destructor">
+      <description summary="delete this object, used or not">
+        Unreferences the frame, allowing it to be reused. Must be called as soon
+        as its no longer used.
+      </description>
+    </request>
+  </interface>
+
+  <interface name="zwlr_screencontent_manager" version="1">
+    <description summary="manager to inform clients and begin capturing">
+      This object is a manager which informs clients about capturable windows
+      and is able to create callbacks from which to begin to receive content
+      from. The "title" argument in the "receive_surface_info" event shall be
+      used to provide a user-readable identifier such as a window title or
+      program name.
+      To begin capturing, use the "capture" request with an ID. Additionally,
+      to capture a cursor surface, use the "cursor" argument with a non-zero
+      value. If a client has no cursor or cursor is unable to be captured,
+      the "capture" request shall return NULL.
+      The client can specify which frame type would be preferred using the
+      "type" argument. If a compositor is unable to provide frames with a given
+      type, NULL shall be returned. The client is welcome to retry with another
+      frame type.
+    </description>
+
+    <enum name="frame_type">
+      <entry name="byte_buffer" value="0"
+             summary="file descriptors to hold mappable linear memfd buffers"/>
+      <entry name="dma_buf" value="1"
+             summary="file descriptors to contain valid dmabuf objects"/>
+    </enum>
+
+    <event name="receive_surface_info">
+      <description summary="get valid surfaces for capture">
+        This will be called whenever a surface that's able to be captured
+        appears.
+      </description>
+      <arg name="title" type="string"
+           summary="window title or an identifier"/>
+      <arg name="id" type="uint"
+           summary="an identifier to create a context"/>
+    </event>
+
+    <request name="capture">
+      <description summary="subscribe to start capturing">
+        Request to start capturing from a surface with a given id.
+      </description>
+      <arg name="frame" type="new_id"
+           interface="zwlr_screencontent_frame"/>
+      <arg name="id" type="uint"
+           summary="an identifier to create a context"/>
+      <arg name="cursor" type="int"
+           summary="capture cursor surface instead"/>
+      <arg name="type" type="uint" enum="frame_type"
+           summary="indicates the type of frame preferred"/>
+    </request>
+  </interface>
+</protocol>
