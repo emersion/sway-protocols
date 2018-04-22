@@ -54,6 +54,13 @@
       All frames are read-only and may not be written into or altered.
     </description>
 
+    <enum name="frame_type">
+      <entry name="byte_buffer" value="0"
+             summary="file descriptors hold mappable linear memfd buffers"/>
+      <entry name="dma_buf" value="1"
+             summary="file descriptors contain valid dmabuf objects"/>
+    </enum>
+
     <enum name="frame_flags">
       <description summary="frame flags">
         Special flags that must be respected by the client.
@@ -76,6 +83,8 @@
            summary="frame height, scaling factor included"/>
       <arg name="scale" type="uint"
            summary="current scaling factor of the client"/>
+      <arg name="type" type="uint" enum="frame_type"
+           summary="indicates the type of frame preferred"/>
       <arg name="frame_flags" type="uint" enum="frame_flags"
            summary="indicates special frame features"/>
       <arg name="mod_high" type="uint"
@@ -132,11 +141,18 @@
       <description summary="indicates frame is available for reading">
         Called as soon as the frame is presented, indicating it is available
         for reading.
+        The timestamp is expressed as tv_sec_hi, tv_sec_lo, tv_nsec triples,
+        each component being an unsigned 32-bit value. Whole seconds are in
+        tv_sec which is a 64-bit value combined from tv_sec_hi and tv_sec_lo,
+        and the additional fractional part in tv_nsec as nanoseconds. Hence,
+        for valid timestamps tv_nsec must be in [0, 999999999].
       </description>
-      <arg name="pts_high" type="uint"
-           summary="presentation timestamp, high"/>
-      <arg name="pts_low" type="uint"
-           summary="presentation timestamp, low"/>
+      <arg name="tv_sec_hi" type="uint"
+           summary="high 32 bits of the seconds part of the timestamp"/>
+      <arg name="tv_sec_lo" type="uint"
+           summary="low 32 bits of the seconds part of the timestamp"/>
+      <arg name="tv_nsec" type="uint"
+           summary="nanoseconds part of the timestamp"/>
     </event>
     <event name="abort">
       <description summary="indicates the frame is no longer valid">
@@ -162,22 +178,10 @@
       from. The "title" argument in the "receive_surface_info" event shall be
       used to provide a user-readable identifier such as a window title or
       program name.
-      To begin capturing, use the "capture" request with an ID. Additionally,
-      to capture a cursor surface, use the "cursor" argument with a non-zero
-      value. If a client has no cursor or cursor is unable to be captured,
-      the "capture" request shall return NULL.
-      The client can specify which frame type would be preferred using the
-      "type" argument. If a compositor is unable to provide frames with a given
-      type, NULL shall be returned. The client is welcome to retry with another
-      frame type.
+      Outputs shall appear as regular surfaces, with an identifiable name in
+      the "title" argument.
+      To begin capturing, use the "capture" request with an ID.
     </description>
-
-    <enum name="frame_type">
-      <entry name="byte_buffer" value="0"
-             summary="file descriptors to hold mappable linear memfd buffers"/>
-      <entry name="dma_buf" value="1"
-             summary="file descriptors to contain valid dmabuf objects"/>
-    </enum>
 
     <event name="receive_surface_info">
       <description summary="get valid surfaces for capture">
@@ -200,8 +204,6 @@
            summary="an identifier to create a context"/>
       <arg name="cursor" type="int"
            summary="capture cursor surface instead"/>
-      <arg name="type" type="uint" enum="frame_type"
-           summary="indicates the type of frame preferred"/>
     </request>
   </interface>
 </protocol>
