@@ -54,6 +54,27 @@
       All frames are read-only and may not be written into or altered.
     </description>
 
+    <enum name="transform">
+      <description summary="orientation of frame">
+	    Describes the orientation needed to be applied to correctly orient the
+	    buffer. For example, a buffer rotated by 90 degrees will have a value
+	    of "3" here, corresponding to the need to apply a 270 degree transpose
+	    to correctly present the buffer.
+
+	    The flipped values correspond to an initial flip around a
+	    vertical axis followed by rotaion.
+      </description>
+
+      <entry name="normal" value="0"/>
+      <entry name="90" value="1"/>
+      <entry name="180" value="2"/>
+      <entry name="270" value="3"/>
+      <entry name="flipped" value="4"/>
+      <entry name="flipped_90" value="5"/>
+      <entry name="flipped_180" value="6"/>
+      <entry name="flipped_270" value="7"/>
+    </enum>
+
     <enum name="frame_type">
       <entry name="byte_buffer" value="0"
              summary="file descriptors hold mappable linear memfd buffers"/>
@@ -83,8 +104,10 @@
            summary="frame height, scaling factor included"/>
       <arg name="scale" type="uint"
            summary="current scaling factor of the client"/>
+      <arg name="transform" type="uint" enum="transform"
+           summary="transform needed to correct the orientation"/>
       <arg name="type" type="uint" enum="frame_type"
-           summary="indicates the type of frame preferred"/>
+           summary="indicates the type of frame"/>
       <arg name="frame_flags" type="uint" enum="frame_flags"
            summary="indicates special frame features"/>
       <arg name="mod_high" type="uint"
@@ -100,13 +123,13 @@
       <description summary="object receiving callback">
         Callback which serves to supply the client with the file descriptors
         containing the data for each object.
-        The amount of data in each FD can be inferred via lseek().
-        Will be called after the main receive event, once per object.
       </description>
       <arg name="index" type="uint"
            summary="index of the current object"/>
       <arg name="fd" type="fd"
            summary="fd of the current object"/>
+      <arg name="size" type="uint"
+           summary="size in bytes for the current object"/>
     </event>
     <event name="receive_layer">
       <description summary="layer receiving callback">
